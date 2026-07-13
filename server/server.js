@@ -6,6 +6,7 @@ import menuRoutes from './routes/menuRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import couponRoutes from './routes/couponRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
 
 // Load env variables
 dotenv.config();
@@ -25,6 +26,7 @@ app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/ai', aiRoutes);
 
 app.get('/', (req, res) => {
   res.send('API is running...');

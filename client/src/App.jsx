@@ -12,6 +12,7 @@ import AdminDashboard from './pages/AdminDashboard.jsx';
 import Profile from './pages/Profile.jsx';
 import { CartProvider } from './context/CartContext.jsx';
 import CartDrawer from './components/CartDrawer.jsx';
+import AIChatWidget from './components/AIChatWidget.jsx';
 
 export default function App() {
   return (
@@ -20,6 +21,7 @@ export default function App() {
         <div className="flex flex-col min-h-screen bg-neutral-950 text-neutral-100 selection:bg-gold-500 selection:text-neutral-950">
           <Navbar />
           <CartDrawer />
+          <AIChatWidget />
           <main className="flex-grow">
             <Routes>
               <Route path="/" element={<Home />} />

@@ -23,6 +23,7 @@ const orderSchema = new mongoose.Schema(
       date: String,
       time: String,
       guests: Number,
+      tableNumber: String,
     },
     items: [
       {

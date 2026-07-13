@@ -38,6 +38,10 @@ export default function CartDrawer() {
 
   const [orderResult, setOrderResult] = useState(null);
   const [cardErrors, setCardErrors] = useState({});
+  const [show3DSecureModal, setShow3DSecureModal] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpError, setOtpError] = useState('');
+  const [stripeVerifying, setStripeVerifying] = useState(false);
 
   // Coupon state
   const [couponCode, setCouponCode] = useState('');
@@ -111,10 +115,107 @@ export default function CartDrawer() {
   if (!isCartOpen) return null;
 
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-    if (cardErrors[e.target.name]) {
-      setCardErrors({ ...cardErrors, [e.target.name]: '' });
+    let { name, value } = e.target;
+    
+    if (name === 'cardNumber') {
+      const digitsOnly = value.replace(/\D/g, '');
+      const formatted = digitsOnly.match(/.{1,4}/g)?.join(' ') || digitsOnly;
+      value = formatted.substring(0, 19);
+    } else if (name === 'expiry') {
+      const digitsOnly = value.replace(/\D/g, '');
+      if (digitsOnly.length > 2) {
+        value = `${digitsOnly.substring(0, 2)}/${digitsOnly.substring(2, 4)}`;
+      } else {
+        value = digitsOnly;
+      }
+      value = value.substring(0, 5);
+    } else if (name === 'cvv') {
+      value = value.replace(/\D/g, '').substring(0, 4);
     }
+    
+    setFormData({ ...formData, [name]: value });
+    if (cardErrors[name]) {
+      setCardErrors({ ...cardErrors, [name]: '' });
+    }
+  };
+
+  const submitOrderToBackend = async () => {
+    const orderItems = cartItems.map(item => ({
+      menuItem: item._id,
+      quantity: item.quantity
+    }));
+
+    const payload = {
+      customerName: formData.name,
+      customerEmail: formData.email || 'customer@example.com',
+      customerPhone: formData.phone,
+      type: 'order',
+      reservationDetails: {
+        date: new Date().toLocaleDateString(),
+        time: new Date().toLocaleTimeString(),
+        guests: 1
+      },
+      items: orderItems,
+      totalAmount: totalPrice - activeDiscountAmount,
+      couponApplied: appliedCoupon ? appliedCoupon.code : '',
+      discountAmount: activeDiscountAmount,
+      paymentMethod: paymentMethod,
+      paymentDetails: paymentMethod === 'card' ? {
+        cardName: formData.cardName,
+        last4: formData.cardNumber.replace(/\s/g, '').slice(-4) || '4444',
+        cardBrand: getCardBrand(formData.cardNumber)
+      } : null
+    };
+
+    try {
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setOrderResult(data);
+        setCheckoutStep('success');
+        clearCart();
+        setAppliedCoupon(null);
+        setCouponCode('');
+        setCouponSuccess('');
+      } else {
+        alert(data.message || 'Failed to submit order');
+      }
+    } catch (err) {
+      console.log('Backend offline, simulating checkout success.');
+      setOrderResult({
+        ...payload,
+        _id: Math.random().toString(36).substring(7).toUpperCase()
+      });
+      setCheckoutStep('success');
+      clearCart();
+      setAppliedCoupon(null);
+      setCouponCode('');
+      setCouponSuccess('');
+    } finally {
+      setLoading(false);
+      setShow3DSecureModal(false);
+      setOtpCode('');
+      setOtpError('');
+    }
+  };
+
+  const handleVerifyOTP = () => {
+    if (otpCode !== '1234') {
+      setOtpError('Invalid authorization passcode. Please enter 1234.');
+      return;
+    }
+    
+    setStripeVerifying(true);
+    setOtpError('');
+    setTimeout(() => {
+      setStripeVerifying(false);
+      submitOrderToBackend();
+    }, 1200);
   };
 
   const handlePlaceOrder = async (e) => {
@@ -171,74 +272,19 @@ export default function CartDrawer() {
       }
       
       setCardErrors({});
+      setLoading(true);
+      setStripeVerifying(true);
+
+      // Contact Stripe API for 1.2s
+      setTimeout(() => {
+        setStripeVerifying(false);
+        setShow3DSecureModal(true);
+      }, 1200);
+
+    } else {
+      setLoading(true);
+      submitOrderToBackend();
     }
-
-    setLoading(true);
-
-    // Prepare payload
-    const orderItems = cartItems.map(item => ({
-      menuItem: item._id,
-      quantity: item.quantity
-    }));
-
-    const payload = {
-      customerName: formData.name,
-      customerEmail: formData.email || 'customer@example.com',
-      customerPhone: formData.phone,
-      type: 'order',
-      reservationDetails: {
-        date: new Date().toLocaleDateString(),
-        time: new Date().toLocaleTimeString(),
-        guests: 1 // for standard orders
-      },
-      items: orderItems,
-      totalAmount: totalPrice - activeDiscountAmount,
-      couponApplied: appliedCoupon ? appliedCoupon.code : '',
-      discountAmount: activeDiscountAmount,
-      paymentMethod: paymentMethod,
-      paymentDetails: paymentMethod === 'card' ? {
-        cardName: formData.cardName,
-        last4: formData.cardNumber.replace(/\s/g, '').slice(-4) || '4444',
-        cardBrand: getCardBrand(formData.cardNumber)
-      } : null
-    };
-
-    // Simulate Payment processing for 1.5s
-    setTimeout(async () => {
-      try {
-        const response = await fetch('/api/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-        if (response.ok) {
-          setOrderResult(data);
-          setCheckoutStep('success');
-          clearCart();
-          setAppliedCoupon(null);
-          setCouponCode('');
-          setCouponSuccess('');
-        } else {
-          alert(data.message || 'Failed to submit order');
-        }
-      } catch (err) {
-        // Fallback for standalone frontend demonstration
-        console.log('Backend offline, simulating checkout success.');
-        setOrderResult({
-          ...payload,
-          _id: Math.random().toString(36).substring(7).toUpperCase()
-        });
-        setCheckoutStep('success');
-        clearCart();
-        setAppliedCoupon(null);
-        setCouponCode('');
-        setCouponSuccess('');
-      } finally {
-        setLoading(false);
-      }
-    }, 1500);
   };
 
   return (
@@ -410,69 +456,90 @@ export default function CartDrawer() {
                   </div>
 
                   {paymentMethod === 'card' && (
-                    <div className="bg-[#fcfcfa] border border-neutral-200 rounded p-3 space-y-2">
-                      <div className="space-y-0.5">
-                        <label className="text-[8px] text-neutral-400 font-bold uppercase tracking-wider">Cardholder Name</label>
+                    <div className="bg-[#fcfcfa] border border-neutral-250 rounded-lg p-4 space-y-3 font-sans shadow-sm">
+                      <div className="flex items-center justify-between border-b border-neutral-100 pb-2">
+                        <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Card Details</span>
+                        <span className={`text-[9px] uppercase tracking-widest font-black px-2 py-0.5 rounded border transition-colors ${
+                          getCardBrand(formData.cardNumber) === 'Visa' ? 'text-blue-700 bg-blue-50 border-blue-200' :
+                          getCardBrand(formData.cardNumber) === 'Mastercard' ? 'text-orange-700 bg-orange-50 border-orange-200' :
+                          getCardBrand(formData.cardNumber) === 'American Express' ? 'text-cyan-700 bg-cyan-50 border-cyan-200' :
+                          'text-neutral-500 bg-neutral-50 border-neutral-200'
+                        }`}>
+                          {getCardBrand(formData.cardNumber)}
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">Cardholder Name</label>
                         <input 
                           type="text" 
                           name="cardName" 
                           value={formData.cardName} 
                           onChange={handleInputChange}
                           placeholder="John Doe"
-                          className={`w-full bg-white border rounded px-3 py-1.5 text-xs text-neutral-700 focus:outline-none ${
+                          className={`w-full bg-white border rounded px-3 py-2 text-xs text-neutral-800 focus:outline-none focus:ring-2 focus:ring-[#7c562d]/20 transition-all ${
                             cardErrors.cardName ? 'border-red-500' : 'border-neutral-200 focus:border-[#7c562d]/50'
                           }`} 
                         />
-                        {cardErrors.cardName && <p className="text-[9px] text-red-500 font-medium">{cardErrors.cardName}</p>}
+                        {cardErrors.cardName && <p className="text-[9px] text-red-500 font-semibold">{cardErrors.cardName}</p>}
                       </div>
-                      <div className="space-y-0.5">
-                        <label className="text-[8px] text-neutral-400 font-bold uppercase tracking-wider">Card Number</label>
-                        <input 
-                          type="text" 
-                          name="cardNumber" 
-                          value={formData.cardNumber} 
-                          onChange={handleInputChange}
-                          placeholder="4111 2222 3333 4444"
-                          className={`w-full bg-white border rounded px-3 py-1.5 text-xs text-neutral-700 focus:outline-none ${
-                            cardErrors.cardNumber ? 'border-red-500' : 'border-neutral-200 focus:border-[#7c562d]/50'
-                          }`} 
-                        />
-                        {cardErrors.cardNumber && <p className="text-[9px] text-red-500 font-medium">{cardErrors.cardNumber}</p>}
+
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider">Card Number</label>
+                        <div className="relative">
+                          <input 
+                            type="text" 
+                            name="cardNumber" 
+                            value={formData.cardNumber} 
+                            onChange={handleInputChange}
+                            placeholder="4111 2222 3333 4444"
+                            className={`w-full bg-white border rounded pl-3 pr-10 py-2 text-xs text-neutral-850 focus:outline-none focus:ring-2 focus:ring-[#7c562d]/20 transition-all ${
+                              cardErrors.cardNumber ? 'border-red-500' : 'border-neutral-200 focus:border-[#7c562d]/50'
+                            }`} 
+                          />
+                          <span className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400">
+                            <CreditCard className="w-4 h-4 text-neutral-300" />
+                          </span>
+                        </div>
+                        {cardErrors.cardNumber && <p className="text-[9px] text-red-500 font-semibold">{cardErrors.cardNumber}</p>}
                       </div>
+
                       <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-0.5">
-                          <label className="text-[8px] text-neutral-400 font-bold uppercase tracking-wider">Expiry</label>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider block">Expiry</label>
                           <input 
                             type="text" 
                             name="expiry" 
                             value={formData.expiry} 
                             onChange={handleInputChange}
                             placeholder="MM/YY"
-                            className={`w-full bg-white border rounded px-3 py-1.5 text-xs text-neutral-700 text-center focus:outline-none ${
+                            className={`w-full bg-white border rounded px-3 py-2 text-xs text-neutral-800 text-center focus:outline-none focus:ring-2 focus:ring-[#7c562d]/20 transition-all ${
                               cardErrors.expiry ? 'border-red-500' : 'border-neutral-200 focus:border-[#7c562d]/50'
                             }`} 
                           />
-                          {cardErrors.expiry && <p className="text-[9px] text-red-500 font-medium">{cardErrors.expiry}</p>}
+                          {cardErrors.expiry && <p className="text-[9px] text-red-500 font-semibold text-center">{cardErrors.expiry}</p>}
                         </div>
-                        <div className="space-y-0.5">
-                          <label className="text-[8px] text-neutral-400 font-bold uppercase tracking-wider">CVV</label>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-neutral-400 font-bold uppercase tracking-wider block">CVV</label>
                           <input 
                             type="password" 
                             name="cvv" 
                             value={formData.cvv} 
                             onChange={handleInputChange}
-                            placeholder="123"
+                            placeholder="•••"
                             maxLength={4}
-                            className={`w-full bg-white border rounded px-3 py-1.5 text-xs text-neutral-700 text-center focus:outline-none ${
+                            className={`w-full bg-white border rounded px-3 py-2 text-xs text-neutral-800 text-center focus:outline-none focus:ring-2 focus:ring-[#7c562d]/20 transition-all ${
                               cardErrors.cvv ? 'border-red-500' : 'border-neutral-200 focus:border-[#7c562d]/50'
                             }`} 
                           />
-                          {cardErrors.cvv && <p className="text-[9px] text-red-500 font-medium">{cardErrors.cvv}</p>}
+                          {cardErrors.cvv && <p className="text-[9px] text-red-500 font-semibold text-center">{cardErrors.cvv}</p>}
                         </div>
                       </div>
-                      <p className="text-[9px] text-neutral-400 flex items-center gap-1.5 pt-1">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Fully secure mock checkout gateway.
-                      </p>
+                      
+                      <div className="flex items-center gap-2 pt-2 border-t border-neutral-100/50 text-[10px] text-neutral-500">
+                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                        <span>Simulated checkout protected by Stripe SSL.</span>
+                      </div>
                     </div>
                   )}
 
@@ -649,6 +716,96 @@ export default function CartDrawer() {
           )}
         </div>
       </div>
+
+      {/* Stripe Authorizing Spinner Overlay */}
+      {stripeVerifying && !show3DSecureModal && (
+        <div className="fixed inset-0 z-[99] flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm animate-fade-in font-sans">
+          <div className="text-center space-y-4">
+            <div className="inline-block w-12 h-12 border-4 border-[#7c562d] border-t-transparent rounded-full animate-spin"></div>
+            <div className="space-y-1">
+              <h4 className="text-md font-bold text-white tracking-wide flex items-center justify-center gap-2">
+                <CreditCard className="w-5 h-5 text-amber-500 animate-pulse" /> Secure Connection
+              </h4>
+              <p className="text-xs text-neutral-400 font-light">Contacting Stripe payment gateways & banks...</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3D Secure / OTP Verification Gate Modal */}
+      {show3DSecureModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in font-sans">
+          <div className="bg-white rounded-xl shadow-2xl border border-neutral-100 max-w-sm w-full overflow-hidden animate-slide-in">
+            {/* Header branding */}
+            <div className="bg-neutral-900 text-white px-5 py-4 flex items-center justify-between border-b border-neutral-800">
+              <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
+                <CreditCard className="w-4 h-4 text-amber-500" />
+                <span>Simulated Secure Authentication</span>
+              </div>
+              <span className="text-[10px] text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded font-bold">3D SECURE</span>
+            </div>
+            
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              <div className="text-center space-y-1">
+                <p className="text-xs text-neutral-400 font-medium uppercase tracking-wider">Transaction Amount</p>
+                <h4 className="text-2xl font-bold text-[#7c562d]">${(totalPrice - activeDiscountAmount).toFixed(2)}</h4>
+              </div>
+              
+              <div className="border-t border-b border-neutral-100 py-3 text-[11px] text-neutral-500 space-y-1 text-center">
+                <p>Merchant: <strong>Gourmet Restaurant Systems</strong></p>
+                <p>Card: <strong>{getCardBrand(formData.cardNumber)} ending in {formData.cardNumber.replace(/\s/g, '').slice(-4)}</strong></p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider block text-center">Enter Mock One-Time Passcode (OTP)</label>
+                <input 
+                  type="text" 
+                  maxLength={4}
+                  value={otpCode}
+                  onChange={(e) => {
+                    setOtpCode(e.target.value);
+                    if (otpError) setOtpError('');
+                  }}
+                  placeholder="Enter 1234"
+                  className="w-full bg-neutral-50 border border-neutral-200 rounded px-4 py-2.5 text-center font-bold tracking-widest text-lg focus:outline-none focus:border-[#7c562d]/50 text-neutral-850"
+                />
+                {otpError && <p className="text-[10px] text-red-500 font-semibold text-center">{otpError}</p>}
+                <p className="text-[9px] text-neutral-400 text-center italic">
+                  For this demo, please enter passcode <strong className="text-neutral-600">1234</strong> to verify purchase.
+                </p>
+              </div>
+
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={handleVerifyOTP}
+                  disabled={stripeVerifying}
+                  className="flex-grow bg-[#7c562d] hover:bg-[#634423] disabled:bg-neutral-300 text-white font-semibold py-2.5 rounded text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  {stripeVerifying ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Verifying...
+                    </>
+                  ) : 'Submit Code'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShow3DSecureModal(false);
+                    setOtpCode('');
+                    setOtpError('');
+                    setLoading(false);
+                  }}
+                  className="border border-neutral-200 hover:bg-neutral-50 text-neutral-500 font-semibold px-4 py-2.5 rounded text-xs uppercase tracking-widest transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

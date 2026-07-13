@@ -20,6 +20,44 @@ import {
   ChefHat
 } from 'lucide-react';
 
+function PreparationTimer({ startTime }) {
+  const duration = 15 * 60 * 1000; // 15 minutes in ms
+  const targetTime = new Date(startTime).getTime() + duration;
+  const [timeLeft, setTimeLeft] = useState(targetTime - Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const remaining = targetTime - Date.now();
+      if (remaining <= 0) {
+        setTimeLeft(0);
+        clearInterval(timer);
+      } else {
+        setTimeLeft(remaining);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [targetTime]);
+
+  if (timeLeft <= 0) {
+    return (
+      <span className="text-[9px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-bold border border-emerald-100">
+        Ready any minute!
+      </span>
+    );
+  }
+
+  const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+  
+  return (
+    <div className="flex items-center gap-1 text-[9px] bg-amber-50 text-amber-800 border border-amber-100 px-2 py-0.5 rounded font-bold">
+      <span className="inline-block w-1 h-1 rounded-full bg-amber-600 animate-ping"></span>
+      <span>Est. Prep: {minutes}:{seconds < 10 ? '0' : ''}{seconds}</span>
+    </div>
+  );
+}
+
 export default function Profile() {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(null);
@@ -268,6 +306,52 @@ export default function Profile() {
     );
   };
 
+  const getOrderStatusDescription = (status) => {
+    switch (status) {
+      case 'pending': return "Order received and waiting for kitchen approval.";
+      case 'confirmed': return "Accepted! Our kitchen team is starting preparation.";
+      case 'preparing': return "Chef is handcrafting your gourmet dishes right now.";
+      case 'ready': return "Hot and fresh! Ready for pickup at the counter.";
+      case 'completed': return "Completed. We hope you enjoyed your meal!";
+      default: return "";
+    }
+  };
+
+  const getReservationStatusLevel = (status) => {
+    switch (status) {
+      case 'pending': return 1;
+      case 'confirmed': return 2;
+      case 'completed': return 3;
+      default: return 0;
+    }
+  };
+
+  const renderReservationStepItem = (stepNum, label, stepStatus, currentStatus, icon) => {
+    const currentLevel = getReservationStatusLevel(currentStatus);
+    const stepLevel = getReservationStatusLevel(stepStatus);
+    const isCompleted = currentLevel >= stepLevel;
+    const isActive = currentStatus === stepStatus;
+
+    return (
+      <div className="flex flex-col items-center text-center space-y-1">
+        <div className={`w-7 h-7 rounded-full flex items-center justify-center border transition-all duration-300 ${
+          isActive 
+            ? 'bg-[#7c562d] text-white border-transparent ring-4 ring-amber-700/10 shadow-sm font-semibold' 
+            : isCompleted
+              ? 'bg-[#7c562d]/80 text-white border-transparent shadow-sm'
+              : 'bg-white text-neutral-300 border-neutral-200'
+        }`}>
+          {icon}
+        </div>
+        <span className={`text-[8px] uppercase tracking-wider font-bold ${
+          isActive ? 'text-[#7c562d]' : isCompleted ? 'text-neutral-700' : 'text-neutral-400'
+        }`}>
+          {label}
+        </span>
+      </div>
+    );
+  };
+
   // Filter items in history by type
   const reservations = history.filter(item => item.type === 'reservation');
   const foodOrders = history.filter(item => item.type === 'order');
@@ -410,11 +494,49 @@ export default function Profile() {
                                   </div>
                                 </div>
 
-                                <div className="text-[11px] text-neutral-500 space-y-0.5">
+        <div className="text-[11px] text-neutral-500 space-y-0.5">
                                   <p>Registered name: <strong className="text-neutral-800">{resItem.customerName}</strong></p>
                                   <p>Contact Phone: <span className="text-neutral-800 font-medium">{resItem.customerPhone}</span></p>
+                                  {resItem.reservationDetails?.tableNumber && (
+                                    <p>Assigned Table: <strong className="text-[#7c562d]">{resItem.reservationDetails.tableNumber}</strong></p>
+                                  )}
                                   <p className="text-[9px] text-neutral-400 mt-2">Ref ID: {resItem._id}</p>
                                 </div>
+
+                                {/* Reservation Visual Timeline */}
+                                {resItem.status !== 'cancelled' ? (
+                                  <div className="bg-neutral-50/50 p-3 rounded border border-neutral-100/70 mt-3 space-y-3 font-sans">
+                                    <div className="flex items-center justify-between text-[9px]">
+                                      <span className="text-neutral-400 uppercase tracking-wider font-bold">Booking Status</span>
+                                      <span className="text-[#7c562d] font-bold">
+                                        {resItem.status === 'pending' ? 'Pending Approval' : 
+                                         resItem.status === 'confirmed' ? 'Secured & Active' : 
+                                         resItem.status === 'completed' ? 'Visit Finished' : ''}
+                                      </span>
+                                    </div>
+                                    <div className="grid grid-cols-3 relative items-center gap-1 z-0">
+                                      {/* Progress line */}
+                                      <div className="absolute left-[15%] right-[15%] top-[14px] h-0.5 bg-neutral-200 -z-10"></div>
+                                      <div 
+                                        className="absolute left-[15%] top-[14px] h-0.5 bg-[#7c562d] transition-all duration-500 -z-10"
+                                        style={{ 
+                                          width: `${
+                                            resItem.status === 'pending' ? '0%' :
+                                            resItem.status === 'confirmed' ? '50%' : '100%'
+                                          }`
+                                        }}
+                                      ></div>
+                                      {renderReservationStepItem(1, 'Requested', 'pending', resItem.status, <Calendar className="w-3 h-3" />)}
+                                      {renderReservationStepItem(2, 'Confirmed', 'confirmed', resItem.status, <CheckSquare className="w-3 h-3" />)}
+                                      {renderReservationStepItem(3, 'Completed', 'completed', resItem.status, <CheckCircle2 className="w-3 h-3" />)}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="bg-red-50 border border-red-100 p-2.5 rounded text-center text-[10px] text-red-700 font-medium flex items-center justify-center gap-1.5 mt-3">
+                                    <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                                    <span>This booking was cancelled.</span>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>
@@ -496,12 +618,20 @@ export default function Profile() {
                                         <div className="bg-neutral-50/50 p-4 rounded border border-neutral-100/70 space-y-4">
                                           <div className="flex items-center justify-between">
                                             <span className="text-[10px] text-neutral-400 uppercase tracking-wider font-bold">Live Order Progress</span>
-                                            {getStatusLevel(order.status) < 5 && (
-                                              <span className="text-[9px] text-[#7c562d] font-bold bg-amber-50 border border-amber-100/50 px-2 py-0.5 rounded animate-pulse">
-                                                Live Tracking
-                                              </span>
-                                            )}
+                                            <div className="flex items-center gap-2">
+                                              {order.status === 'preparing' && (
+                                                <PreparationTimer startTime={order.updatedAt || order.createdAt} />
+                                              )}
+                                              {getStatusLevel(order.status) < 5 && (
+                                                <span className="text-[9px] text-[#7c562d] font-bold bg-amber-50 border border-amber-100/50 px-2 py-0.5 rounded animate-pulse">
+                                                  Live Tracking
+                                                </span>
+                                              )}
+                                            </div>
                                           </div>
+                                          <p className="text-[11px] text-neutral-500 italic font-light pt-0.5">
+                                            {getOrderStatusDescription(order.status)}
+                                          </p>
                                           
                                           {/* Stepper Steps grid */}
                                           <div className="grid grid-cols-5 relative items-center gap-1 z-0">
@@ -550,9 +680,19 @@ export default function Profile() {
                                                 <p className="text-[10px] text-neutral-400 font-light mt-0.5">{item.menuItem?.category}</p>
                                               </div>
                                             </div>
-                                            <span className="font-semibold text-neutral-800">
-                                              ${((item.menuItem?.price || 0) * item.quantity).toFixed(2)}
-                                            </span>
+                                            <div className="flex items-center gap-2.5">
+                                              <span className="font-semibold text-neutral-800">
+                                                ${((item.menuItem?.price || 0) * item.quantity).toFixed(2)}
+                                              </span>
+                                              {item.menuItem && (order.status === 'completed' || order.status === 'ready' || order.status === 'preparing' || order.status === 'confirmed') && (
+                                                <Link
+                                                  to={`/menu?select=${item.menuItem._id}`}
+                                                  className="text-[9px] text-[#7c562d] hover:text-[#634423] font-bold border border-[#7c562d]/25 hover:border-[#7c562d]/50 px-2 py-0.5 rounded transition-all duration-300 whitespace-nowrap"
+                                                >
+                                                  Write Review
+                                                </Link>
+                                              )}
+                                            </div>
                                           </div>
                                         ))}
                                       </div>
