@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Send, X, Sparkles, Loader2, ChefHat, HelpCircle } from 'lucide-react';
+import { useCart } from '../context/CartContext';
 
 const SUGGESTIONS = [
   { text: "Recommend a signature dish", query: "Can you recommend a signature dish?" },
@@ -9,6 +10,7 @@ const SUGGESTIONS = [
 ];
 
 export default function AIChatWidget() {
+  const { isCartOpen } = useCart();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -82,8 +84,11 @@ export default function AIChatWidget() {
     }
   };
 
+  // Hide the floating concierge widget during checkout for mobile visual clarity
+  if (isCartOpen) return null;
+
   return (
-    <div className="fixed bottom-6 right-6 z-50 font-sans">
+    <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 font-sans">
       
       {/* Floating Circular Toggle Button */}
       {!isOpen && (
@@ -105,7 +110,7 @@ export default function AIChatWidget() {
 
       {/* Slide-up Chat Dashboard Window */}
       {isOpen && (
-        <div className="w-[350px] sm:w-[380px] h-[500px] bg-neutral-900/95 backdrop-blur-md rounded-xl border border-neutral-800 shadow-2xl flex flex-col overflow-hidden animate-slide-in font-sans">
+        <div className="w-[calc(100vw-32px)] sm:w-[380px] h-[500px] bg-neutral-900/95 backdrop-blur-md rounded-xl border border-neutral-800 shadow-2xl flex flex-col overflow-hidden animate-slide-in font-sans">
           
           {/* Header Panel */}
           <div className="bg-neutral-950 px-4.5 py-4 border-b border-neutral-800 flex items-center justify-between">
